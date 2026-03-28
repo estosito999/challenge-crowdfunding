@@ -9,19 +9,26 @@ contract CrowdFund {
     /// Errors //////
     /////////////////
 
-    // Errors go here...
+    error NotOpenToWithdraw();
+    error WithdrawTransferFailed(address to, uint256 amount);
+    error TooEarly(uint256 deadline, uint256 currentTimestamp);
 
     //////////////////////
     /// State Variables //
     //////////////////////
-
+    
     FundingRecipient public fundingRecipient;
+    mapping(address => uint256) public balances;
+    bool public openToWithdraw; // por defecto es false
+    uint256 public deadline = block.timestamp + 2 hours;
+    uint256 public constant threshold = 1 ether;
+
 
     ////////////////
     /// Events /////
     ////////////////
 
-    // Events go here...
+    event Contribution(address, uint256);
 
     ///////////////////
     /// Modifiers /////
@@ -43,19 +50,40 @@ contract CrowdFund {
     /// Functions /////
     ///////////////////
 
-    function contribute() public payable {}
+    function contribute() public payable {
+        balances[msg.sender] += msg.value;
+        emit Contribution(msg.sender, msg.value);
+    }
 
-    function withdraw() public {}
+    function withdraw() public {
+        if (!openToWithdraw) revert NotOpenToWithdraw();
 
-    function execute() public {}
+        uint256 balance = balances[msg.sender];
+        balances[msg.sender] = 0;
 
-    receive() external payable {}
+        (bool success,) = msg.sender.call{value: balance}("");
+        if (!success) revert WithdrawTransferFailed(msg.sender, balance);
+    }
+
+    function execute() public {
+        if (block.timestamp <= deadline) revert TooEarly(deadline, block.timestamp);
+
+        if (address(this).balance >= threshold) {
+            fundingRecipient.complete{value: address(this).balance}();
+        } else {
+            openToWithdraw = true;
+        }
+    }
+
+    fallback() external payable {
+        contribute();
+    }
 
     ////////////////////////
     /// View Functions /////
     ////////////////////////
 
     function timeLeft() public view returns (uint256) {
-        return 0;
+        return deadline > block.timestamp ? deadline - block.timestamp : 0;
     }
 }
